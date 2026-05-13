@@ -1,0 +1,190 @@
+.header {
+  position: fixed;
+  top: 0;
+  right: 0;
+  height: var(--header-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 2rem;
+  background: var(--bg-primary);
+  border-bottom: var(--border-thick);
+  z-index: var(--z-sticky);
+  transition: left var(--transition-bounce);
+}
+
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: var(--text-base);
+  font-weight: var(--weight-extrabold);
+}
+
+.breadcrumbItem { color: var(--text-secondary); }
+.breadcrumbSep { color: var(--text-primary); font-weight: var(--weight-extrabold); }
+.breadcrumbCurrent { color: var(--text-primary); }
+
+.searchBar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: var(--bg-primary);
+  border: var(--border-medium);
+  border-radius: var(--radius-full);
+  padding: 0.5rem 1.25rem;
+  width: 360px;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-brutal-sm);
+}
+
+.searchBar:focus-within {
+  border-color: var(--text-primary);
+  box-shadow: var(--shadow-brutal-md);
+  transform: translate(-2px, -2px);
+}
+
+.searchIcon { color: var(--text-primary); flex-shrink: 0; stroke-width: 2.5; }
+
+.searchInput {
+  flex: 1;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+}
+.searchInput::placeholder { color: var(--text-tertiary); font-weight: var(--weight-medium); }
+
+.searchShortcut {
+  font-size: 12px;
+  color: var(--text-primary);
+  background: var(--accent-secondary);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  border: var(--border-thin);
+  font-family: var(--font-mono);
+  font-weight: var(--weight-bold);
+  box-shadow: 1px 1px 0px #000;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.actionBtn {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-full);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  border: var(--border-medium);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: 2px 2px 0px #000;
+}
+
+.actionBtn:hover {
+  background: var(--accent-secondary);
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0px #000;
+}
+
+.actionBtn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0px 0px 0px #000;
+}
+
+.actionBtn svg { stroke-width: 2.5; }
+
+.badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--accent-primary);
+  border: 2px solid #000;
+}
+
+.divider {
+  width: 3px;
+  height: 32px;
+  background: #000;
+}
+
+.userBtn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 1rem 0.35rem 0.35rem;
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  border: var(--border-medium);
+  background: var(--bg-primary);
+  box-shadow: 2px 2px 0px #000;
+}
+
+.userBtn:hover {
+  background: var(--accent-tertiary);
+  color: #fff;
+  transform: translate(-1px, -1px);
+  box-shadow: 3px 3px 0px #000;
+}
+
+.userBtn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0px 0px 0px #000;
+}
+
+.headerAvatar {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-full);
+  background: var(--accent-quaternary);
+  border: var(--border-medium);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: var(--weight-extrabold);
+  color: #000;
+}
+
+.headerUserName {
+  font-size: var(--text-base);
+  font-weight: var(--weight-extrabold);
+  color: inherit;
+}
+
+.liveIndicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 13px;
+  color: var(--text-primary);
+  font-weight: var(--weight-extrabold);
+  letter-spacing: 0.1em;
+  padding: 4px 12px;
+  border: var(--border-medium);
+  border-radius: var(--radius-full);
+  background: var(--accent-secondary);
+  box-shadow: 2px 2px 0px #000;
+}
+
+.liveDot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  background: #000;
+  border: 2px solid #000;
+  animation: none; /* Removed pulse for brutalist style */
+}

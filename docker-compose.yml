@@ -1,0 +1,403 @@
+##############################################################################
+#  🐳 AGENTIC BI — DATA COMMAND CENTER
+#  Docker Compose Infrastructure
+#  ──────────────────────────────────
+#  Profiles:
+#    core          → Postgres, MinIO, Redpanda, Iceberg REST Catalog
+#    spark         → Spark Master + Worker (Lakehouse ETL)
+#    query         → Trino (SQL Federation / Gold layer queries)
+#    bi            → MLflow, FastAPI Backend
+#    orchestration → Prefect Server
+#
+#  Usage:
+#    docker compose --profile core up -d
+#    docker compose --profile core --profile spark up -d
+#    docker compose --profile core --profile spark --profile query --profile bi --profile orchestration up -d
+##############################################################################
+
+name: agentic-bi
+
+# ── Shared Networks ──────────────────────────────────────────────────────────
+networks:
+  lakehouse:
+    driver: bridge
+
+# ── Persistent Volumes ───────────────────────────────────────────────────────
+volumes:
+  postgres_data:
+  minio_data:
+  redpanda_data:
+  mlflow_data:
+  spark_warehouse:
+  iceberg_warehouse:
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  SERVICES
+# ═════════════════════════════════════════════════════════════════════════════
+services:
+
+  # ──────────────────────────────────────────────────────────────────────────
+  #  PROFILE: core
+  # ──────────────────────────────────────────────────────────────────────────
+
+  # ── PostgreSQL ─────────────────────────────────────────────────────────────
+  #  Source-of-truth OLTP database + MLflow metadata store
+  postgres:
+    image: postgres:16-alpine
+    profiles: [core]
+    container_name: dwh-postgres
+    hostname: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-dwh_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-dwh_secret_2024}
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce}
+      POSTGRES_MULTIPLE_DATABASES: "ecommerce,mlflow_db,iceberg_catalog,prefect_db"
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/postgres/init-multiple-dbs.sh:/docker-entrypoint-initdb.d/01-init-dbs.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-dwh_admin} -d ${POSTGRES_DB:-ecommerce}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lakehouse
+
+  # ── MinIO (S3-compatible Object Storage) ───────────────────────────────────
+  #  Lakehouse storage layer for Bronze / Silver / Gold Iceberg tables
+  minio:
+    image: minio/minio:latest
+    profiles: [core]
+    container_name: dwh-minio
+    hostname: minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_secret_2024}
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"    # S3 API
+      - "9001:9001"    # Web Console
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - lakehouse
+
+  # ── MinIO Bucket Init ──────────────────────────────────────────────────────
+  #  Auto-create lakehouse buckets on first boot
+  minio-init:
+    image: minio/mc:latest
+    profiles: [core]
+    container_name: dwh-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        mc alias set dwh http://minio:9000 $${MINIO_ROOT_USER:-minio_admin} $${MINIO_ROOT_PASSWORD:-minio_secret_2024};
+        mc mb --ignore-existing dwh/lakehouse;
+        mc mb --ignore-existing dwh/mlflow-artifacts;
+        mc mb --ignore-existing dwh/spark-logs;
+        mc anonymous set download dwh/mlflow-artifacts;
+        echo '✅ MinIO buckets initialized';
+      "
+    networks:
+      - lakehouse
+
+  # ── Redpanda (Kafka-compatible Event Streaming) ────────────────────────────
+  #  CDC event bus — receives Debezium CDC events from PostgreSQL
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.3.1
+    profiles: [core]
+    container_name: dwh-redpanda
+    hostname: redpanda
+    restart: unless-stopped
+    command:
+      - redpanda
+      - start
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+      - --mode dev-container
+      - --smp 1
+      - --default-log-level=warn
+    ports:
+      - "19092:19092"  # Kafka API (external)
+      - "18082:18082"  # Pandaproxy (HTTP Kafka)
+      - "18081:18081"  # Schema Registry
+    volumes:
+      - redpanda_data:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    networks:
+      - lakehouse
+
+  # ── Redpanda Console (Kafka UI) ───────────────────────────────────────────
+  redpanda-console:
+    image: docker.redpanda.com/redpandadata/console:v2.8.0
+    profiles: [core]
+    container_name: dwh-redpanda-console
+    hostname: redpanda-console
+    restart: unless-stopped
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    environment:
+      CONFIG_FILEPATH: ""
+      KAFKA_BROKERS: redpanda:9092
+      KAFKA_SCHEMAREGISTRY_ENABLED: "true"
+      KAFKA_SCHEMAREGISTRY_URLS: http://redpanda:8081
+    ports:
+      - "8180:8080"
+    networks:
+      - lakehouse
+
+  # ── Redpanda Topic Init ────────────────────────────────────────────────────
+  #  Auto-create Olist event topics on first boot
+  redpanda-init:
+    image: docker.redpanda.com/redpandadata/redpanda:v24.3.1
+    profiles: [core]
+    container_name: dwh-redpanda-init
+    depends_on:
+      redpanda:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+        rpk topic create olist.orders   --partitions 3 --replicas 1 --brokers redpanda:9092 || true;
+        rpk topic create olist.reviews  --partitions 3 --replicas 1 --brokers redpanda:9092 || true;
+        rpk topic create olist.payments --partitions 3 --replicas 1 --brokers redpanda:9092 || true;
+        rpk topic create olist.leads    --partitions 2 --replicas 1 --brokers redpanda:9092 || true;
+        rpk topic create olist.deals    --partitions 2 --replicas 1 --brokers redpanda:9092 || true;
+        echo '✅ Redpanda topics initialized';
+      "
+    networks:
+      - lakehouse
+
+  # ── Apache Iceberg REST Catalog ────────────────────────────────────────────
+  #  Centralized catalog for all Iceberg tables in the Lakehouse
+  iceberg-rest:
+    image: tabulario/iceberg-rest:latest
+    profiles: [core]
+    container_name: dwh-iceberg-rest
+    hostname: iceberg-rest
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    environment:
+      CATALOG_CATALOG__IMPL: org.apache.iceberg.jdbc.JdbcCatalog
+      CATALOG_URI: jdbc:postgresql://postgres:5432/iceberg_catalog
+      CATALOG_JDBC_USER: ${POSTGRES_USER:-dwh_admin}
+      CATALOG_JDBC_PASSWORD: ${POSTGRES_PASSWORD:-dwh_secret_2024}
+      CATALOG_WAREHOUSE: s3://lakehouse/
+      CATALOG_IO__IMPL: org.apache.iceberg.aws.s3.S3FileIO
+      CATALOG_S3_ENDPOINT: http://minio:9000
+      CATALOG_S3_PATH__STYLE__ACCESS: "true"
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio_admin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret_2024}
+      AWS_REGION: us-east-1
+    ports:
+      - "8181:8181"
+    networks:
+      - lakehouse
+
+  # ──────────────────────────────────────────────────────────────────────────
+  #  PROFILE: spark
+  # ──────────────────────────────────────────────────────────────────────────
+
+  # ── Spark Master ───────────────────────────────────────────────────────────
+  #  Orchestrates Lakehouse ETL jobs (Bronze → Silver → Gold)
+  spark-master:
+    image: apache/spark:3.5.8-python3
+    profiles: [spark]
+    container_name: dwh-spark-master
+    hostname: spark-master
+    restart: unless-stopped
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      SPARK_MASTER_HOST: spark-master
+      SPARK_MASTER_PORT: "7077"
+      SPARK_MASTER_WEBUI_PORT: "8282"
+      SPARK_EXTRA_CLASSPATH: /opt/spark/extra-jars/*
+    command: >
+      bash -c "/opt/spark/sbin/start-master.sh && tail -f /opt/spark/logs/*.out"
+    ports:
+      - "7077:7077"    # Spark Master RPC
+      - "8282:8282"    # Spark Master Web UI
+    volumes:
+      - spark_warehouse:/opt/spark/warehouse
+      - ./docker/spark/jars:/opt/spark/extra-jars:ro
+      - ./docker/spark/conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
+      - ./pipelines:/opt/spark/work/pipelines:ro
+    networks:
+      - lakehouse
+
+  # ── Spark Worker ───────────────────────────────────────────────────────────
+  spark-worker:
+    image: apache/spark:3.5.8-python3
+    profiles: [spark]
+    container_name: dwh-spark-worker-1
+    hostname: spark-worker-1
+    restart: unless-stopped
+    depends_on:
+      - spark-master
+    environment:
+      SPARK_WORKER_CORES: ${SPARK_WORKER_CORES:-2}
+      SPARK_WORKER_MEMORY: ${SPARK_WORKER_MEMORY:-2g}
+      SPARK_EXTRA_CLASSPATH: /opt/spark/extra-jars/*
+    command: >
+      bash -c "/opt/spark/sbin/start-worker.sh spark://spark-master:7077 && tail -f /opt/spark/logs/*.out"
+    ports:
+      - "8283:8081"    # Worker Web UI
+    volumes:
+      - spark_warehouse:/opt/spark/warehouse
+      - ./docker/spark/jars:/opt/spark/extra-jars:ro
+      - ./docker/spark/conf/spark-defaults.conf:/opt/spark/conf/spark-defaults.conf:ro
+      - ./pipelines:/opt/spark/work/pipelines:ro
+    networks:
+      - lakehouse
+
+  # ──────────────────────────────────────────────────────────────────────────
+  #  PROFILE: query
+  # ──────────────────────────────────────────────────────────────────────────
+
+  # ── Trino (SQL Query Engine) ───────────────────────────────────────────────
+  #  Federated SQL over Iceberg Gold layer + PostgreSQL
+  trino:
+    image: trinodb/trino:464
+    profiles: [query]
+    container_name: dwh-trino
+    hostname: trino
+    restart: unless-stopped
+    depends_on:
+      iceberg-rest:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8383:8080"    # Trino Web UI
+    volumes:
+      - ./docker/trino/etc:/etc/trino:ro
+    networks:
+      - lakehouse
+
+  # ──────────────────────────────────────────────────────────────────────────
+  #  PROFILE: bi
+  # ──────────────────────────────────────────────────────────────────────────
+
+  # ── MLflow Tracking Server ─────────────────────────────────────────────────
+  #  Tracks ML experiments (RFM, Apriori, Random Forest) for Analytics Lab
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.19.0
+    profiles: [bi]
+    container_name: dwh-mlflow
+    hostname: mlflow
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      MLFLOW_BACKEND_STORE_URI: postgresql://${POSTGRES_USER:-dwh_admin}:${POSTGRES_PASSWORD:-dwh_secret_2024}@postgres:5432/mlflow_db
+      MLFLOW_DEFAULT_ARTIFACT_ROOT: s3://mlflow-artifacts/
+      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:-minio_admin}
+      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:-minio_secret_2024}
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+    command: >
+      mlflow server
+        --host 0.0.0.0
+        --port 5000
+        --backend-store-uri postgresql://${POSTGRES_USER:-dwh_admin}:${POSTGRES_PASSWORD:-dwh_secret_2024}@postgres:5432/mlflow_db
+        --default-artifact-root s3://mlflow-artifacts/
+    ports:
+      - "5000:5000"
+    volumes:
+      - mlflow_data:/mlflow
+    networks:
+      - lakehouse
+
+  # ── FastAPI Backend ────────────────────────────────────────────────────────
+  #  API gateway for the React frontend
+  #  Connects to: Postgres, Redpanda, Trino, MLflow, LLM
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    profiles: [bi]
+    container_name: dwh-backend
+    hostname: backend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    environment:
+      # ── Database ──
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-dwh_admin}:${POSTGRES_PASSWORD:-dwh_secret_2024}@postgres:5432/${POSTGRES_DB:-ecommerce}
+      # ── Kafka / Redpanda ──
+      KAFKA_BOOTSTRAP_SERVERS: redpanda:9092
+      # ── Trino ──
+      TRINO_HOST: trino
+      TRINO_PORT: 8080
+      # ── MLflow ──
+      MLFLOW_TRACKING_URI: http://mlflow:5000
+      # ── LLM (Agentic BI) ──
+      LLM_BASE_URL: ${LLM_BASE_URL:-http://host.docker.internal:11434/v1}
+      LLM_MODEL: ${LLM_MODEL:-qwen3:8b}
+      LLM_API_KEY: ${LLM_API_KEY:-not-needed}
+      # ── General ──
+      ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+    networks:
+      - lakehouse
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ──────────────────────────────────────────────────────────────────────────
+  #  PROFILE: orchestration
+  # ──────────────────────────────────────────────────────────────────────────
+
+  # ── Prefect Server ─────────────────────────────────────────────────────────
+  #  Primary workflow orchestration — Medallion pipeline jobs (Bronze→Silver→Gold)
+  prefect-server:
+    image: prefecthq/prefect:3-latest
+    profiles: [orchestration]
+    container_name: dwh-prefect-server
+    hostname: prefect-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://${POSTGRES_USER:-dwh_admin}:${POSTGRES_PASSWORD:-dwh_secret_2024}@postgres:5432/prefect_db
+      PREFECT_SERVER_API_HOST: 0.0.0.0
+    command: prefect server start --host 0.0.0.0 --port 4200
+    ports:
+      - "4200:4200"    # Prefect UI
+    networks:
+      - lakehouse

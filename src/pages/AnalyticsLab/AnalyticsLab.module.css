@@ -1,0 +1,154 @@
+.page { display: flex; flex-direction: column; gap: var(--space-6); }
+
+.header { display: flex; align-items: flex-end; justify-content: space-between; }
+.title { font-size: var(--text-5xl); font-weight: var(--weight-extrabold); color: #000; letter-spacing: -0.04em; text-transform: uppercase; }
+.subtitle { font-size: var(--text-lg); color: var(--text-secondary); margin-top: 4px; font-weight: var(--weight-bold); }
+
+.tabs {
+  display: flex;
+  gap: 0.5rem;
+  background: var(--bg-primary);
+  border: var(--border-thick);
+  border-radius: var(--radius-full);
+  padding: 6px;
+  box-shadow: var(--shadow-brutal-sm);
+}
+
+.tab {
+  padding: 0.5rem 1.5rem;
+  border-radius: var(--radius-full);
+  font-size: 14px;
+  font-weight: var(--weight-extrabold);
+  color: var(--text-primary);
+  border: 2px solid transparent;
+  background: none;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  text-transform: uppercase;
+}
+.tab:hover {
+  background: var(--bg-secondary);
+}
+
+.tabActive {
+  color: #fff;
+  background: var(--accent-primary);
+  border: var(--border-medium);
+  box-shadow: 2px 2px 0px #000;
+}
+
+.content { display: flex; flex-direction: column; gap: var(--space-5); }
+
+.chartCard {
+  background: var(--bg-primary);
+  border: var(--border-thick);
+  border-radius: var(--radius-xl);
+  padding: 2rem;
+  box-shadow: var(--shadow-brutal-lg);
+}
+
+.chartTitle {
+  font-size: 1.5rem;
+  font-weight: var(--weight-extrabold);
+  color: #000;
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+}
+
+.segmentGrid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1.5rem; margin-bottom: 2rem; }
+
+.segmentCard {
+  background: var(--bg-primary);
+  border: var(--border-thick);
+  border-radius: var(--radius-xl);
+  padding: 1.5rem;
+  text-align: center;
+  transition: all var(--transition-fast);
+  cursor: pointer;
+  box-shadow: var(--shadow-brutal-md);
+}
+
+.segmentCard:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-brutal-lg);
+}
+
+.segmentCard:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0px 0px 0px #000;
+}
+
+.segmentDot { width: 12px; height: 12px; border-radius: var(--radius-full); display: inline-block; margin-right: 0.5rem; border: var(--border-medium); }
+.segmentLabel { font-size: 14px; font-weight: var(--weight-extrabold); color: #000; text-transform: uppercase; }
+.segmentCount { font-size: var(--text-4xl); font-weight: var(--weight-extrabold); color: #000; margin-top: 0.5rem; letter-spacing: -0.04em; }
+.segmentMeta { font-size: 13px; font-weight: var(--weight-bold); color: var(--text-secondary); margin-top: 0.25rem; }
+
+/* Predictor form */
+.formGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+.formGroup { display: flex; flex-direction: column; gap: 0.5rem; }
+.formLabel { font-size: 14px; font-weight: var(--weight-extrabold); color: var(--text-primary); text-transform: uppercase; }
+
+.formInput, .formSelect {
+  background: var(--bg-secondary);
+  border: var(--border-thick);
+  border-radius: var(--radius-md);
+  padding: 0.75rem 1rem;
+  color: var(--text-primary);
+  font-size: var(--text-base);
+  font-weight: var(--weight-bold);
+  transition: all var(--transition-fast);
+  box-shadow: inset 2px 2px 0px rgba(0,0,0,0.05);
+}
+
+.formInput:focus, .formSelect:focus {
+  background: #fff;
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.predictBtn {
+  margin-top: 1rem;
+  padding: 1rem 2.5rem;
+  background: var(--accent-secondary);
+  border: var(--border-thick);
+  border-radius: var(--radius-full);
+  color: #000;
+  font-weight: var(--weight-extrabold);
+  font-size: var(--text-base);
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-brutal-md);
+}
+
+.predictBtn:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: var(--shadow-brutal-lg);
+  background: var(--accent-primary);
+  color: #fff;
+}
+
+.predictBtn:active {
+  transform: translate(2px, 2px);
+  box-shadow: 0px 0px 0px #000;
+}
+
+.resultCard {
+  background: var(--bg-primary);
+  border: var(--border-thick);
+  border-radius: var(--radius-xl);
+  padding: 2.5rem;
+  text-align: center;
+  margin-top: 2rem;
+  box-shadow: var(--shadow-brutal-lg);
+}
+
+.resultRating {
+  font-size: 5rem;
+  font-weight: var(--weight-extrabold);
+  color: var(--accent-primary);
+  letter-spacing: -0.04em;
+  text-shadow: 4px 4px 0px #000;
+}
+
+.resultProb { font-size: var(--text-lg); font-weight: var(--weight-bold); color: var(--text-primary); margin-top: 0.5rem; }

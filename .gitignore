@@ -31,3 +31,15 @@ docker/spark/jars/*.jar
 __pycache__
 *.pyc
 .venv
+
+# Frontend (tracked in FE repo)
+src/
+public/
+index.html
+package.json
+package-lock.json
+tsconfig*.json
+vite.config.ts
+eslint.config.js
+node_modules/
+dist/
